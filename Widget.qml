@@ -6,7 +6,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "io.github.bjarkimg.shield-remote"
+  moduleName: "io.github.bjarkimg.android-tv-remote"
 
   property bool popupOpen: false
   readonly property bool opened: popupOpen
@@ -26,10 +26,10 @@ BarWidget {
   property var actionQueue: []
   property int selectedDeviceIndex: 0
 
-  readonly property string deviceName: String(setting("deviceName", "SHIELD"))
+  readonly property string deviceName: String(setting("deviceName", "Android TV"))
   readonly property string host: String(setting("host", ""))
   readonly property string remotePath: decodeURIComponent(
-    String(Qt.resolvedUrl("shield-remote")).replace(/^file:\/\//, "")
+    String(Qt.resolvedUrl("android-tv-remote")).replace(/^file:\/\//, "")
   )
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.rgba(foreground.r, foreground.g, foreground.b, 0.58)
@@ -121,7 +121,7 @@ BarWidget {
 
   function startPairing(identifier, name) {
     pairingIdentifier = String(identifier || "")
-    pairingName = String(name || "SHIELD")
+    pairingName = String(name || "Android TV")
     processError = ""
     statusText = "STARTING PAIR"
     sendRequest({ "op": "pair-start", "identifier": pairingIdentifier })
@@ -401,7 +401,7 @@ BarWidget {
     bar: root.bar
     text: "󰟴"
     active: root.popupOpen
-    tooltipText: root.activeDeviceName + " SHIELD"
+    tooltipText: root.activeDeviceName + " Android TV"
     onPressed: root.popupOpen = !root.popupOpen
   }
 
@@ -477,9 +477,9 @@ BarWidget {
               }
 
               Text {
-                text: root.viewMode === "remote" ? "SHIELD REMOTE"
-                  : root.viewMode === "devices" ? "SHIELD DEVICES"
-                  : "PAIR SHIELD"
+                text: root.viewMode === "remote" ? "ANDROID TV REMOTE"
+                  : root.viewMode === "devices" ? "ANDROID TV DEVICES"
+                  : "PAIR ANDROID TV"
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -768,7 +768,7 @@ BarWidget {
           Text {
             visible: !root.scanning && root.devices.length === 0 && root.processError === ""
             width: parent.width
-            text: "NO SHIELDS FOUND"
+            text: "NO DEVICES FOUND"
             color: root.dim
             horizontalAlignment: Text.AlignHCenter
             font.family: root.fontFamily

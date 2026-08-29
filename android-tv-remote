@@ -3,18 +3,19 @@
 set -euo pipefail
 
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-CLIENT_HOME="$DATA_HOME/io.github.bjarkimg.shield-remote"
+CLIENT_HOME="$DATA_HOME/io.github.bjarkimg.android-tv-remote"
+LEGACY_HOME="$DATA_HOME/io.github.bjarkimg.shield-remote"
 VENV="$CLIENT_HOME/venv"
 CLIENT_PYTHON="$VENV/bin/python"
 ANDROIDTVREMOTE2_VERSION="0.3.1"
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-SESSION_SCRIPT="${SHIELD_REMOTE_SESSION:-$SCRIPT_DIR/shield-remote-session.py}"
-SHIELD_HOST="${SHIELD_HOST:-}"
-SHIELD_NAME="${SHIELD_NAME:-SHIELD}"
+SESSION_SCRIPT="${ANDROID_TV_REMOTE_SESSION:-${SHIELD_REMOTE_SESSION:-$SCRIPT_DIR/android-tv-remote-session.py}}"
+DEVICE_HOST="${ANDROID_TV_HOST:-${SHIELD_HOST:-}}"
+DEVICE_NAME="${ANDROID_TV_NAME:-${SHIELD_NAME:-Android TV}}"
 
 usage() {
   cat <<'EOF'
-Usage: shield-remote [--host HOST] [--name NAME] ACTION
+Usage: android-tv-remote [--host HOST] [--name NAME] ACTION
 
 Navigation:
   up down left right select back home menu
@@ -32,7 +33,9 @@ Internal:
   session
 
 Uses the Android TV Remote protocol (same as the Google TV phone app).
-No ADB or developer mode. Pair with the 6-character code shown on the SHIELD.
+Works with NVIDIA SHIELD, Chromecast with Google TV, Google TV Streamer,
+and other Android TV / Google TV devices. No ADB or developer mode.
+Pair with the 6-character code shown on the TV.
 EOF
 }
 
@@ -40,18 +43,18 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
   --host)
     [[ $# -ge 2 ]] || {
-      echo "shield-remote: --host needs a value" >&2
+      echo "android-tv-remote: --host needs a value" >&2
       exit 2
     }
-    SHIELD_HOST="$2"
+    DEVICE_HOST="$2"
     shift 2
     ;;
   --name)
     [[ $# -ge 2 ]] || {
-      echo "shield-remote: --name needs a value" >&2
+      echo "android-tv-remote: --name needs a value" >&2
       exit 2
     }
-    SHIELD_NAME="$2"
+    DEVICE_NAME="$2"
     shift 2
     ;;
   -h | --help)
@@ -63,7 +66,7 @@ while [[ $# -gt 0 ]]; do
     break
     ;;
   -*)
-    echo "shield-remote: unknown option: $1" >&2
+    echo "android-tv-remote: unknown option: $1" >&2
     usage >&2
     exit 2
     ;;
@@ -80,21 +83,25 @@ done
 
 install_client() {
   if ! command -v python3 >/dev/null 2>&1; then
-    echo "shield-remote: python3 is required" >&2
+    echo "android-tv-remote: python3 is required" >&2
     return 1
+  fi
+
+  if [[ ! -d $CLIENT_HOME && -d $LEGACY_HOME ]]; then
+    mv "$LEGACY_HOME" "$CLIENT_HOME"
   fi
 
   mkdir -p "$CLIENT_HOME"
 
   if [[ ! -x "$CLIENT_PYTHON" ]]; then
-    echo "shield-remote: creating Python environment..." >&2
+    echo "android-tv-remote: creating Python environment..." >&2
     python3 -m venv "$VENV"
   fi
 
   if ! "$CLIENT_PYTHON" -c \
     "import importlib.metadata as m, sys; sys.exit(m.version('androidtvremote2') != '$ANDROIDTVREMOTE2_VERSION')" \
     >/dev/null 2>&1; then
-    echo "shield-remote: installing androidtvremote2 $ANDROIDTVREMOTE2_VERSION..." >&2
+    echo "android-tv-remote: installing androidtvremote2 $ANDROIDTVREMOTE2_VERSION..." >&2
     "$CLIENT_PYTHON" -m pip install \
       --disable-pip-version-check \
       --quiet \
@@ -106,11 +113,11 @@ install_client
 
 run_session() {
   if [[ ! -f "$SESSION_SCRIPT" ]]; then
-    echo "shield-remote: session backend is missing: $SESSION_SCRIPT" >&2
+    echo "android-tv-remote: session backend is missing: $SESSION_SCRIPT" >&2
     return 1
   fi
 
-  exec "$CLIENT_PYTHON" "$SESSION_SCRIPT" --host "$SHIELD_HOST" --name "$SHIELD_NAME"
+  exec "$CLIENT_PYTHON" "$SESSION_SCRIPT" --host "$DEVICE_HOST" --name "$DEVICE_NAME"
 }
 
 case "$1" in
@@ -118,11 +125,11 @@ session)
   run_session
   ;;
 up | down | left | right | select | back | home | menu | play-pause | previous | next | rewind | ff | volume-down | volume-up | wake | sleep | status | app-plex | app-netflix | app-youtube)
-  echo "shield-remote: one-shot actions run through the bar session" >&2
+  echo "android-tv-remote: one-shot actions run through the bar session" >&2
   exit 2
   ;;
 *)
-  echo "shield-remote: unknown action: $1" >&2
+  echo "android-tv-remote: unknown action: $1" >&2
   usage >&2
   exit 2
   ;;

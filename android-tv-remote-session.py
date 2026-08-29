@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Backend for the Omarchy NVIDIA SHIELD Remote plugin."""
+"""Backend for the Omarchy Android TV Remote plugin."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def emit(event: str, **values: Any) -> None:
 class RemoteSession:
     def __init__(self, host: str, name: str) -> None:
         self.default_host = host.strip()
-        self.default_name = name.strip() or "SHIELD"
+        self.default_name = name.strip() or "Android TV"
         self.host = self.default_host
         self.name = self.default_name
         self.identifier = ""
@@ -69,10 +69,17 @@ class RemoteSession:
 
         data_home = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
         state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
-        self.cert_dir = data_home / "io.github.bjarkimg.shield-remote"
+        self.cert_dir = data_home / "io.github.bjarkimg.android-tv-remote"
+        legacy_cert_dir = data_home / "io.github.bjarkimg.shield-remote"
+        if not self.cert_dir.exists() and legacy_cert_dir.exists():
+            legacy_cert_dir.rename(self.cert_dir)
         self.certfile = str(self.cert_dir / "cert.pem")
         self.keyfile = str(self.cert_dir / "key.pem")
-        self.state_path = state_home / "omarchy" / "settings" / "shield-remote.json"
+        settings_dir = state_home / "omarchy" / "settings"
+        self.state_path = settings_dir / "android-tv-remote.json"
+        legacy_state = settings_dir / "shield-remote.json"
+        if not self.state_path.exists() and legacy_state.exists():
+            legacy_state.rename(self.state_path)
         self.state: dict[str, Any] = {"selected": "", "devices": {}}
 
     def load_state(self) -> None:
@@ -122,7 +129,7 @@ class RemoteSession:
         await self.ensure_cert()
         self.load_state()
         if not self.host:
-            raise RuntimeError("no SHIELD selected — open Devices to scan or add a host")
+            raise RuntimeError("no device selected — open Devices to scan or add a host")
         await self.connect(self.host, self.name)
 
     async def resolve_host(self, host: str) -> str:
@@ -215,7 +222,7 @@ class RemoteSession:
             return
         stored = {
             "identifier": identifier,
-            "name": str(device.get("name") or "SHIELD"),
+            "name": str(device.get("name") or "Android TV"),
             "host": str(device.get("host") or device.get("address") or ""),
             "address": str(device.get("address") or device.get("host") or ""),
             "paired": bool(device.get("paired")),
@@ -318,7 +325,7 @@ class RemoteSession:
         stored = self.state.get("devices", {}).get(identifier, {})
         return {
             "identifier": identifier,
-            "name": name or cert_name or "SHIELD",
+            "name": name or cert_name or "Android TV",
             "host": address,
             "address": address,
             "paired": bool(isinstance(stored, dict) and stored.get("paired")),
@@ -372,9 +379,9 @@ class RemoteSession:
 
         device = self.discovered.get(identifier) or self.state.get("devices", {}).get(identifier)
         if not isinstance(device, dict):
-            raise RuntimeError("that SHIELD is no longer available")
+            raise RuntimeError("that device is no longer available")
         if not device.get("paired"):
-            raise RuntimeError(f"{device.get('name') or 'SHIELD'} is not paired")
+            raise RuntimeError(f"{device.get('name') or 'Android TV'} is not paired")
 
         await self.connect(
             str(device.get("host") or device.get("address") or ""),
@@ -386,7 +393,7 @@ class RemoteSession:
         await self.close_pairing()
         device = self.discovered.get(identifier) or self.state.get("devices", {}).get(identifier)
         if not isinstance(device, dict):
-            raise RuntimeError("that SHIELD is no longer available")
+            raise RuntimeError("that device is no longer available")
 
         host = str(device.get("host") or device.get("address") or "")
         address = await self.resolve_host(host)
@@ -403,7 +410,7 @@ class RemoteSession:
         emit(
             "pairing-pin",
             identifier=identifier,
-            name=str(device.get("name") or "SHIELD"),
+            name=str(device.get("name") or "Android TV"),
         )
 
     async def finish_pairing(self, pin: str) -> None:
@@ -411,14 +418,14 @@ class RemoteSession:
             raise RuntimeError("pairing has not been started")
         code = pin.strip().upper()
         if not re.fullmatch(r"[0-9A-F]{6}", code):
-            raise ValueError("enter the six-character code shown on the SHIELD")
+            raise ValueError("enter the six-character code shown on the TV")
 
         identifier = self.pairing_identifier
         host = self.pairing.host
         try:
             await self.pairing.async_finish_pairing(code)
         except InvalidAuth as error:
-            raise RuntimeError("the SHIELD did not accept that code") from error
+            raise RuntimeError("the TV did not accept that code") from error
         finally:
             await self.close_pairing()
 
@@ -465,7 +472,7 @@ class RemoteSession:
     async def dispatch(self, action: str) -> str:
         if not self.connected or self.remote is None:
             if not self.host:
-                raise RuntimeError("no SHIELD selected — open Devices to scan or add a host")
+                raise RuntimeError("no device selected — open Devices to scan or add a host")
             await self.connect(self.host, self.name)
 
         assert self.remote is not None
@@ -535,7 +542,7 @@ class RemoteSession:
 async def async_main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="")
-    parser.add_argument("--name", default="SHIELD")
+    parser.add_argument("--name", default="Android TV")
     args = parser.parse_args()
 
     session = RemoteSession(args.host, args.name)
