@@ -16,8 +16,8 @@ Anything running **Android TV** or **Google TV** with the pre-installed
 
 | Device | Notes |
 | --- | --- |
-| NVIDIA SHIELD TV (2015, 2017) | Same protocol as Google TV |
-| NVIDIA SHIELD TV Pro (2017, 2019) | Larger 2019 Pro box tested here (see below). Disable simplified wake buttons if power/wake fails: **Settings → Remotes & accessories → Simplified wake buttons** |
+| NVIDIA SHIELD TV (2015, 2017) | 2017 16GB (`darcy`) tested here. Same protocol as Google TV |
+| NVIDIA SHIELD TV Pro (2017, 2019) | Disable simplified wake buttons if power/wake fails: **Settings → Remotes & accessories → Simplified wake buttons** |
 | Chromecast with Google TV HD (2020) | |
 | Chromecast with Google TV 4K (2020) | |
 | Google TV Streamer 4K (2024) | |
@@ -35,7 +35,7 @@ the panel is off.
 ### Tested here
 
 - Philips 65″ OLED (2020 Android TV, TPM191E platform — OLED805/855/865/935 class)
-- NVIDIA SHIELD TV Pro (2019) — the larger 2019 box, used with a SHIELD gamepad
+- NVIDIA SHIELD TV 2017 16GB (`darcy`, advertised as “SHIELD Android TV”) — paired, running Plex during the scan
 
 ### Not supported
 
