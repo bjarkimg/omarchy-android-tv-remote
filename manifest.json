@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.bjarkimg.shield-remote",
+  "name": "SHIELD Remote",
+  "version": "1.0.0",
+  "author": "Bjarki Már",
+  "license": "MIT",
+  "description": "Keyboard-driven NVIDIA SHIELD remote with discovery, PIN pairing, and Plex/Netflix/YouTube shortcuts",
+  "homepage": "https://github.com/bjarkimg/omarchy-shield-remote",
+  "repository": "https://github.com/bjarkimg/omarchy-shield-remote",
+  "keywords": [
+    "bar",
+    "media",
+    "remote",
+    "shield",
+    "android-tv"
+  ],
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "SHIELD Remote",
+    "description": "Remote with navigation, playback, volume, power, discovery, and PIN pairing",
+    "category": "Controls",
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {
+      "deviceName": "SHIELD",
+      "host": ""
+    },
+    "schema": [
+      {
+        "key": "deviceName",
+        "type": "string",
+        "label": "SHIELD name",
+        "defaultValue": "SHIELD"
+      },
+      {
+        "key": "host",
+        "type": "string",
+        "label": "SHIELD host (IP or hostname)",
+        "defaultValue": ""
+      }
+    ]
+  }
+}
