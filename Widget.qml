@@ -170,6 +170,28 @@ BarWidget {
     })
   }
 
+  function removeDevice(identifier) {
+    var target = String(identifier || "")
+    if (!target && selectedDeviceIndex >= 0 && selectedDeviceIndex < devices.length) {
+      target = String(devices[selectedDeviceIndex].identifier || "")
+    }
+    if (!target) {
+      processError = "No device selected"
+      return
+    }
+    processError = ""
+    statusText = "REMOVING"
+    sendRequest({ "op": "remove", "identifier": target })
+  }
+
+  function removeSelectedDevice() {
+    if (selectedDeviceIndex < 0 || selectedDeviceIndex >= devices.length) {
+      processError = "No device selected"
+      return
+    }
+    removeDevice(devices[selectedDeviceIndex].identifier)
+  }
+
   function moveDeviceCursor(dy) {
     if (devices.length === 0 || dy === 0) return
     selectedDeviceIndex = Math.max(0, Math.min(devices.length - 1, selectedDeviceIndex + dy))
@@ -202,17 +224,30 @@ BarWidget {
       return
     }
 
+    if (message.event === "removed") {
+      var removedId = String(message.identifier || "")
+      if (removedId === activeIdentifier || !message.connected) {
+        sessionReady = false
+        online = false
+        activeDeviceName = deviceName
+        activeIdentifier = ""
+        activeHost = host
+        statusText = "REMOVED"
+      }
+      return
+    }
+
     if (message.event === "devices") {
       scanning = false
       devices = message.devices || []
-      selectedDeviceIndex = 0
+      selectedDeviceIndex = Math.max(0, Math.min(selectedDeviceIndex, Math.max(0, devices.length - 1)))
       for (var index = 0; index < devices.length; index++) {
         if (String(devices[index].identifier) === activeIdentifier) {
           selectedDeviceIndex = index
           break
         }
       }
-      statusText = String(devices.length) + " FOUND"
+      if (statusText !== "REMOVED") statusText = String(devices.length) + " FOUND"
       return
     }
 
@@ -273,6 +308,7 @@ BarWidget {
       if (key === "r") scanDevices()
       else if (key === "b") backToRemote()
       else if (key === "a") hostInput.forceActiveFocus()
+      else if (key === "x") removeSelectedDevice()
       else if (key === "q") close()
       return
     }
@@ -742,38 +778,63 @@ BarWidget {
           Repeater {
             model: root.devices
 
-            Button {
+            Row {
               required property int index
               required property var modelData
 
               width: devicesView.width
-              height: 38
-              text: String(modelData.name).toUpperCase()
-                + (modelData.paired ? "  ·  PAIRED" : "  ·  PAIR")
-                + (modelData.online ? "" : "  ·  OFFLINE")
-              iconText: modelData.paired ? "󰌆" : "󰐕"
-              tooltipText: String(modelData.address || modelData.host || "")
-              selected: String(modelData.identifier) === root.activeIdentifier
-              hasCursor: index === root.selectedDeviceIndex
-              leftAlign: true
-              foreground: modelData.online ? root.foreground : root.dim
-              accent: root.accent
-              fontFamily: root.fontFamily
-              fontSize: Style.font.bodySmall
-              bordered: true
-              onHovered: function(isHovered) {
-                if (isHovered) root.selectedDeviceIndex = index
+              spacing: Style.space(7)
+
+              Button {
+                width: parent.width - 38 - parent.spacing
+                height: 38
+                text: String(modelData.name).toUpperCase()
+                  + (modelData.paired ? "  ·  PAIRED" : "  ·  PAIR")
+                  + (modelData.online ? "" : "  ·  OFFLINE")
+                iconText: modelData.paired ? "󰌆" : "󰐕"
+                tooltipText: String(modelData.address || modelData.host || "")
+                selected: String(modelData.identifier) === root.activeIdentifier
+                hasCursor: index === root.selectedDeviceIndex
+                leftAlign: true
+                foreground: modelData.online ? root.foreground : root.dim
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                bordered: true
+                onHovered: function(isHovered) {
+                  if (isHovered) root.selectedDeviceIndex = index
+                }
+                onClicked: {
+                  root.selectedDeviceIndex = index
+                  root.activateSelectedDevice()
+                }
               }
-              onClicked: {
-                root.selectedDeviceIndex = index
-                root.activateSelectedDevice()
+
+              Button {
+                width: 38
+                height: 38
+                text: ""
+                iconText: "󰆴"
+                tooltipText: "Remove " + String(modelData.name || "device")
+                foreground: root.foreground
+                accent: root.accent
+                fontFamily: root.fontFamily
+                fontSize: Style.font.bodySmall
+                bordered: true
+                onHovered: function(isHovered) {
+                  if (isHovered) root.selectedDeviceIndex = index
+                }
+                onClicked: {
+                  root.selectedDeviceIndex = index
+                  root.removeDevice(modelData.identifier)
+                }
               }
             }
           }
 
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "[J/K] SELECT   [ENTER] OPEN   [R] RESCAN   [ESC] BACK"
+            text: "[J/K] SELECT   [ENTER] OPEN   [X] REMOVE   [R] RESCAN"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

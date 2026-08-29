@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.bjarkimg.shield-remote",
   "name": "SHIELD Remote",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Bjarki Már",
   "license": "MIT",
   "description": "Keyboard-driven NVIDIA SHIELD remote with discovery, PIN pairing, and Plex/Netflix/YouTube shortcuts",

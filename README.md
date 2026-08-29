@@ -42,7 +42,8 @@ installs `androidtvremote2==0.3.1`. This can take a moment; the panel will
 reconnect automatically when setup finishes.
 
 Open the bar widget, choose **Devices**, scan or enter the SHIELD's IP, and
-type the six-character PIN shown on the television.
+type the six-character PIN shown on the television. Forget a saved device with
+the trash button or `X`.
 
 ## Controls
 
@@ -59,6 +60,7 @@ type the six-character PIN shown on the television.
 | W | Wake |
 | 1 / 2 / 3 | Plex / Netflix / YouTube |
 | D | Devices |
+| X | Remove selected device (on Devices) |
 | Escape or Q | Close |
 
 ## Update

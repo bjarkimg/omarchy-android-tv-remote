@@ -225,6 +225,37 @@ class RemoteSession:
             self.state["selected"] = identifier
         self.save_state()
 
+    async def remove_device(self, identifier: str) -> None:
+        identifier = str(identifier or "").strip()
+        if not identifier:
+            raise RuntimeError("no device selected")
+
+        stored = self.state.setdefault("devices", {}).pop(identifier, None)
+        self.discovered.pop(identifier, None)
+        if self.state.get("selected") == identifier:
+            remaining = [
+                device_id
+                for device_id, device in self.state.get("devices", {}).items()
+                if isinstance(device, dict) and device.get("paired")
+            ]
+            self.state["selected"] = remaining[0] if remaining else ""
+        self.save_state()
+
+        disconnected = identifier == self.identifier
+        if disconnected:
+            await self.close_connection()
+            self.host = ""
+            self.name = self.default_name
+            self.identifier = ""
+
+        emit(
+            "removed",
+            identifier=identifier,
+            name=str((stored or {}).get("name") or ""),
+            connected=self.connected,
+        )
+        emit("devices", devices=await self.scan_devices())
+
     @staticmethod
     def decode_avahi(value: str) -> str:
         return re.sub(
@@ -425,6 +456,9 @@ class RemoteSession:
             return
         if operation == "add":
             await self.add_host(str(request.get("host", "")), str(request.get("name", "")))
+            return
+        if operation == "remove":
+            await self.remove_device(str(request.get("identifier", "")))
             return
         raise ValueError(f"unknown operation: {operation}")
 
