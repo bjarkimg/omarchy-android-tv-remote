@@ -7,6 +7,8 @@ or developer mode. Pair with the six-character code shown on the television.
 If the Google TV or Google Home app on a phone can control the box, this plugin
 can too.
 
+![Android TV Remote bar panel on NVIDIA SHIELD](preview.png)
+
 ## Supported devices
 
 Anything running **Android TV** or **Google TV** with the pre-installed
