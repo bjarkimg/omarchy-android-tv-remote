@@ -9,6 +9,7 @@ VENV="$CLIENT_HOME/venv"
 CLIENT_PYTHON="$VENV/bin/python"
 ANDROIDTVREMOTE2_VERSION="0.3.1"
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+REQUIREMENTS_LOCK="$SCRIPT_DIR/requirements.lock"
 SESSION_SCRIPT="${ANDROID_TV_REMOTE_SESSION:-${SHIELD_REMOTE_SESSION:-$SCRIPT_DIR/android-tv-remote-session.py}}"
 DEVICE_HOST="${ANDROID_TV_HOST:-${SHIELD_HOST:-}}"
 DEVICE_NAME="${ANDROID_TV_NAME:-${SHIELD_NAME:-Android TV}}"
@@ -98,14 +99,21 @@ install_client() {
     python3 -m venv "$VENV"
   fi
 
+  if [[ ! -f "$REQUIREMENTS_LOCK" ]]; then
+    echo "android-tv-remote: requirements.lock not found: $REQUIREMENTS_LOCK" >&2
+    return 1
+  fi
+
   if ! "$CLIENT_PYTHON" -c \
     "import importlib.metadata as m, sys; sys.exit(m.version('androidtvremote2') != '$ANDROIDTVREMOTE2_VERSION')" \
     >/dev/null 2>&1; then
-    echo "android-tv-remote: installing androidtvremote2 $ANDROIDTVREMOTE2_VERSION..." >&2
+    echo "android-tv-remote: installing hash-locked dependencies from requirements.lock..." >&2
     "$CLIENT_PYTHON" -m pip install \
       --disable-pip-version-check \
       --quiet \
-      "androidtvremote2==$ANDROIDTVREMOTE2_VERSION"
+      --require-hashes \
+      --no-deps \
+      -r "$REQUIREMENTS_LOCK"
   fi
 }
 

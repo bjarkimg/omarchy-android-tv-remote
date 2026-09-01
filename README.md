@@ -62,9 +62,9 @@ the panel is off.
 - Omarchy Quattro
 - Python 3.9 or newer with `venv` support
 - An Android TV / Google TV device on the same local network
-- Internet access on first launch to install the pinned
-  [`androidtvremote2`](https://github.com/tronikos/androidtvremote2) dependency
-  into an isolated environment
+- Internet access on first launch to install the hash-locked
+  [`androidtvremote2`](https://github.com/tronikos/androidtvremote2) dependencies
+  (`requirements.lock`) into an isolated environment
 - Optional: Avahi's `avahi-browse` for faster discovery; you can always add a
   host by IP
 
@@ -79,8 +79,9 @@ omarchy plugin add https://github.com/bjarkimg/omarchy-android-tv-remote.git --e
 
 The first launch creates an isolated Python environment under
 `${XDG_DATA_HOME:-$HOME/.local/share}/io.github.bjarkimg.android-tv-remote/` and
-installs `androidtvremote2==0.3.1`. This can take a moment; the panel will
-reconnect automatically when setup finishes.
+installs the fully hash-locked dependency graph (`requirements.lock`) using `pip
+install --require-hashes`. This can take a moment; the panel will reconnect
+automatically when setup finishes.
 
 Open the bar widget, choose **Devices**, scan or enter the device IP, and type
 the six-character PIN shown on the television. Forget a saved device with the
