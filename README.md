@@ -71,17 +71,20 @@ the panel is off.
 The plugin runs unsandboxed inside `omarchy-shell`. Review the repository
 before installing it.
 
-## Install
+## Install & Setup
 
 ```bash
+# 1. Install the plugin
 omarchy plugin add https://github.com/bjarkimg/omarchy-android-tv-remote.git --enable
+
+# 2. Run one-time explicit setup to provision the hash-locked dependencies into an isolated environment
+~/.config/omarchy/plugins/io.github.bjarkimg.android-tv-remote/android-tv-remote setup
 ```
 
-The first launch creates an isolated Python environment under
+The setup command creates an isolated Python virtualenv under
 `${XDG_DATA_HOME:-$HOME/.local/share}/io.github.bjarkimg.android-tv-remote/` and
 installs the fully hash-locked dependency graph (`requirements.lock`) using `pip
-install --require-hashes`. This can take a moment; the panel will reconnect
-automatically when setup finishes.
+install --require-hashes --no-deps`.
 
 Open the bar widget, choose **Devices**, scan or enter the device IP, and type
 the six-character PIN shown on the television. Forget a saved device with the

@@ -9,8 +9,10 @@ import asyncio
 import json
 import os
 import re
+import secrets
 import shlex
 import socket
+import stat
 import sys
 import time
 from pathlib import Path
@@ -18,6 +20,13 @@ from typing import Any
 
 from androidtvremote2 import AndroidTVRemote, CannotConnect, ConnectionClosed, InvalidAuth
 
+
+MAX_STATE_SIZE = 65536
+MAX_STDIN_LINE = 65536
+MAX_DEVICES = 32
+MAX_STRING_LEN = 64
+NETWORK_TIMEOUT = 8.0
+AVAHI_TIMEOUT = 5.0
 
 REMOTE_KEYS = {
     "up": "DPAD_UP",
@@ -39,7 +48,6 @@ REMOTE_KEYS = {
     "wake": "WAKEUP",
     "sleep": "SLEEP",
     "power": "POWER",
-    "power-off": "POWER",
     "toggle-power": "POWER",
 }
 
@@ -57,10 +65,91 @@ def emit(event: str, **values: Any) -> None:
     print(json.dumps({"event": event, **values}, separators=(",", ":")), flush=True)
 
 
+def get_secure_settings_dir() -> Path:
+    state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
+    settings_dir = state_home / "omarchy" / "settings"
+    os.makedirs(settings_dir, mode=0o700, exist_ok=True)
+    return settings_dir
+
+
+def safe_load_state(filename: str = "android-tv-remote.json") -> dict[str, Any]:
+    """Read state using descriptor-bound directory access, no-follow, and size checks."""
+    settings_dir = get_secure_settings_dir()
+    dir_fd = -1
+    fd = -1
+    try:
+        dir_fd = os.open(str(settings_dir), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            fd = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dir_fd)
+        except FileNotFoundError:
+            return {"selected": "", "devices": {}}
+
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return {"selected": "", "devices": {}}
+        if st.st_uid != os.getuid():
+            return {"selected": "", "devices": {}}
+        if st.st_size > MAX_STATE_SIZE:
+            return {"selected": "", "devices": {}}
+
+        content = os.read(fd, MAX_STATE_SIZE).decode("utf-8", errors="replace")
+        data = json.loads(content)
+        if isinstance(data, dict) and isinstance(data.get("devices"), dict):
+            return data
+        return {"selected": "", "devices": {}}
+    except Exception:
+        return {"selected": "", "devices": {}}
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if dir_fd >= 0:
+            os.close(dir_fd)
+
+
+def safe_save_state(payload: dict[str, Any], filename: str = "android-tv-remote.json") -> None:
+    """Atomically write state with randomized 0600 temp file and directory fsync."""
+    settings_dir = get_secure_settings_dir()
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(encoded) > MAX_STATE_SIZE:
+        raise ValueError("State payload exceeds maximum size")
+
+    tmp_name = f"{filename}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    tmp_path = settings_dir / tmp_name
+    target_path = settings_dir / filename
+    dir_fd = -1
+    tmp_fd = -1
+    try:
+        dir_fd = os.open(str(settings_dir), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        tmp_fd = os.open(
+            tmp_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+            dir_fd=dir_fd,
+        )
+        st = os.fstat(tmp_fd)
+        if st.st_uid != os.getuid():
+            raise PermissionError("Directory owner mismatch")
+        os.write(tmp_fd, encoded)
+        os.fsync(tmp_fd)
+        os.close(tmp_fd)
+        tmp_fd = -1
+        os.replace(tmp_path, target_path)
+    finally:
+        if tmp_fd >= 0:
+            os.close(tmp_fd)
+        if dir_fd >= 0:
+            os.close(dir_fd)
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
 class RemoteSession:
     def __init__(self, host: str, name: str) -> None:
-        self.default_host = host.strip()
-        self.default_name = name.strip() or "Android TV"
+        self.default_host = host.strip()[:MAX_STRING_LEN]
+        self.default_name = (name.strip() or "Android TV")[:MAX_STRING_LEN]
         self.host = self.default_host
         self.name = self.default_name
         self.identifier = ""
@@ -72,33 +161,19 @@ class RemoteSession:
         self.discovered: dict[str, dict[str, Any]] = {}
 
         data_home = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
-        state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
         self.cert_dir = data_home / "io.github.bjarkimg.android-tv-remote"
-        legacy_cert_dir = data_home / "io.github.bjarkimg.shield-remote"
-        if not self.cert_dir.exists() and legacy_cert_dir.exists():
-            legacy_cert_dir.rename(self.cert_dir)
+        os.makedirs(self.cert_dir, mode=0o700, exist_ok=True)
         self.certfile = str(self.cert_dir / "cert.pem")
         self.keyfile = str(self.cert_dir / "key.pem")
-        settings_dir = state_home / "omarchy" / "settings"
-        self.state_path = settings_dir / "android-tv-remote.json"
-        legacy_state = settings_dir / "shield-remote.json"
-        if not self.state_path.exists() and legacy_state.exists():
-            legacy_state.rename(self.state_path)
         self.state: dict[str, Any] = {"selected": "", "devices": {}}
 
     def load_state(self) -> None:
-        try:
-            loaded = json.loads(self.state_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict) and isinstance(loaded.get("devices"), dict):
-                self.state = loaded
-        except (FileNotFoundError, json.JSONDecodeError, OSError):
-            pass
-
-        selected = str(self.state.get("selected", ""))
+        self.state = safe_load_state()
+        selected = str(self.state.get("selected", ""))[:MAX_STRING_LEN]
         device = self.state.get("devices", {}).get(selected, {})
         if isinstance(device, dict):
-            self.host = str(device.get("host") or device.get("address") or self.host)
-            self.name = str(device.get("name") or self.name)
+            self.host = str(device.get("host") or device.get("address") or self.host)[:MAX_STRING_LEN]
+            self.name = str(device.get("name") or self.name)[:MAX_STRING_LEN]
             self.identifier = selected
 
         if not self.host and self.default_host:
@@ -106,14 +181,7 @@ class RemoteSession:
             self.name = self.default_name
 
     def save_state(self) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.state_path.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(self.state, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        temporary.chmod(0o600)
-        os.replace(temporary, self.state_path)
+        safe_save_state(self.state)
 
     def make_remote(self, host: str) -> AndroidTVRemote:
         return AndroidTVRemote(
@@ -125,7 +193,7 @@ class RemoteSession:
         )
 
     async def ensure_cert(self) -> None:
-        self.cert_dir.mkdir(parents=True, exist_ok=True)
+        os.makedirs(self.cert_dir, mode=0o700, exist_ok=True)
         remote = self.make_remote(self.host or "127.0.0.1")
         await remote.async_generate_cert_if_missing()
 
@@ -137,7 +205,7 @@ class RemoteSession:
         await self.connect(self.host, self.name)
 
     async def resolve_host(self, host: str) -> str:
-        host = host.strip()
+        host = host.strip()[:MAX_STRING_LEN]
         if not host:
             raise RuntimeError("missing host")
         if ":" in host and host.count(":") == 1:
@@ -146,11 +214,14 @@ class RemoteSession:
             socket.inet_aton(host)
             return host
         except OSError:
-            addresses = await self.loop.getaddrinfo(
-                host,
-                None,
-                family=socket.AF_INET,
-                type=socket.SOCK_STREAM,
+            addresses = await asyncio.wait_for(
+                self.loop.getaddrinfo(
+                    host,
+                    None,
+                    family=socket.AF_INET,
+                    type=socket.SOCK_STREAM,
+                ),
+                timeout=NETWORK_TIMEOUT,
             )
             if not addresses:
                 raise RuntimeError(f"could not resolve {host}")
@@ -159,49 +230,36 @@ class RemoteSession:
     async def connect(self, host: str, name: str = "") -> None:
         address = await self.resolve_host(host)
         await self.close_connection()
-        remote = self.make_remote(address)
-        await remote.async_generate_cert_if_missing()
-        try:
-            name_from_cert, mac = await remote.async_get_name_and_mac()
-        except CannotConnect as error:
-            raise RuntimeError(f"could not reach {name or host} at {address}") from error
 
-        display_name = name or name_from_cert or self.default_name
-        identifier = mac or address
+        self.host = host[:MAX_STRING_LEN]
+        self.name = (name or self.name or "Android TV")[:MAX_STRING_LEN]
+        remote = self.make_remote(address)
         try:
-            await remote.async_connect()
+            await asyncio.wait_for(remote.async_connect(), timeout=NETWORK_TIMEOUT)
+        except CannotConnect as error:
+            remote.disconnect()
+            raise RuntimeError(f"could not reach {self.name} at {address}") from error
+        except ConnectionClosed as error:
+            remote.disconnect()
+            raise RuntimeError(f"connection closed by {self.name}") from error
         except InvalidAuth as error:
             remote.disconnect()
-            self.host = address
-            self.name = display_name
-            self.identifier = identifier
-            self.remember_device(
-                {
-                    "identifier": identifier,
-                    "name": display_name,
-                    "host": address,
-                    "address": address,
-                    "paired": False,
-                    "online": True,
-                }
-            )
-            raise RuntimeError(f"{display_name} needs pairing") from error
+            raise RuntimeError(f"{self.name} is not paired — open Devices to pair") from error
 
-        remote.keep_reconnecting()
         self.remote = remote
         self.connected = True
-        self.host = address
-        self.name = display_name
-        self.identifier = identifier
+        identifier = getattr(remote.device_info, "model", "") or getattr(remote.device_info, "name", "") or address
+        self.identifier = identifier[:MAX_STRING_LEN]
         device = {
-            "identifier": identifier,
-            "name": display_name,
-            "host": address,
+            "identifier": self.identifier,
+            "name": self.name,
+            "host": self.host,
             "address": address,
             "paired": True,
             "online": True,
         }
-        self.discovered[identifier] = device
+        if len(self.discovered) < MAX_DEVICES:
+            self.discovered[self.identifier] = device
         self.remember_device(device)
 
     async def close_connection(self) -> None:
@@ -221,23 +279,28 @@ class RemoteSession:
         await self.close_connection()
 
     def remember_device(self, device: dict[str, Any]) -> None:
-        identifier = str(device.get("identifier") or "")
+        identifier = str(device.get("identifier") or "")[:MAX_STRING_LEN]
         if not identifier:
             return
+        devices = self.state.setdefault("devices", {})
+        if len(devices) >= MAX_DEVICES and identifier not in devices:
+            # Drop oldest entry to enforce bound
+            devices.pop(next(iter(devices)), None)
+
         stored = {
             "identifier": identifier,
-            "name": str(device.get("name") or "Android TV"),
-            "host": str(device.get("host") or device.get("address") or ""),
-            "address": str(device.get("address") or device.get("host") or ""),
+            "name": str(device.get("name") or "Android TV")[:MAX_STRING_LEN],
+            "host": str(device.get("host") or device.get("address") or "")[:MAX_STRING_LEN],
+            "address": str(device.get("address") or device.get("host") or "")[:MAX_STRING_LEN],
             "paired": bool(device.get("paired")),
         }
-        self.state.setdefault("devices", {})[identifier] = stored
+        devices[identifier] = stored
         if stored["paired"]:
             self.state["selected"] = identifier
         self.save_state()
 
     async def remove_device(self, identifier: str) -> None:
-        identifier = str(identifier or "").strip()
+        identifier = str(identifier or "").strip()[:MAX_STRING_LEN]
         if not identifier:
             raise RuntimeError("no device selected")
 
@@ -262,7 +325,7 @@ class RemoteSession:
         emit(
             "removed",
             identifier=identifier,
-            name=str((stored or {}).get("name") or ""),
+            name=str((stored or {}).get("name") or "")[:MAX_STRING_LEN],
             connected=self.connected,
         )
         emit("devices", devices=await self.scan_devices())
@@ -278,6 +341,7 @@ class RemoteSession:
     async def avahi_records(self) -> dict[str, dict[str, Any]]:
         records: dict[str, dict[str, Any]] = {}
         for service in MDNS_TYPES:
+            process = None
             try:
                 process = await asyncio.create_subprocess_exec(
                     "avahi-browse",
@@ -286,33 +350,41 @@ class RemoteSession:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
                 )
-            except FileNotFoundError:
-                return records
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=AVAHI_TIMEOUT)
+            except (FileNotFoundError, asyncio.TimeoutError):
+                if process is not None:
+                    try:
+                        process.terminate()
+                        await asyncio.sleep(0.05)
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                continue
 
-            stdout, _ = await process.communicate()
-            for raw_line in stdout.decode(errors="replace").splitlines():
+            for raw_line in stdout.decode(errors="replace").splitlines()[:MAX_DEVICES]:
                 fields = raw_line.split(";")
                 if len(fields) < 9 or fields[0] != "=" or fields[2] != "IPv4":
                     continue
-                address = fields[7]
-                name = self.decode_avahi(fields[3])
-                host = self.decode_avahi(fields[6])
+                address = fields[7][:MAX_STRING_LEN]
+                name = self.decode_avahi(fields[3])[:MAX_STRING_LEN]
+                host = self.decode_avahi(fields[6])[:MAX_STRING_LEN]
                 identifier = address
                 if len(fields) >= 10:
                     for item in shlex.split(fields[9]):
                         key, separator, value = item.partition("=")
                         if separator and key.lower() in {"bt", "mac"}:
-                            identifier = value
+                            identifier = value[:MAX_STRING_LEN]
                             break
-                records[identifier] = {
-                    "identifier": identifier,
-                    "name": name,
-                    "host": host,
-                    "address": address,
-                    "paired": identifier in self.state.get("devices", {})
-                    and bool(self.state["devices"][identifier].get("paired")),
-                    "online": True,
-                }
+                if len(records) < MAX_DEVICES:
+                    records[identifier] = {
+                        "identifier": identifier,
+                        "name": name,
+                        "host": host,
+                        "address": address,
+                        "paired": identifier in self.state.get("devices", {})
+                        and bool(self.state["devices"][identifier].get("paired")),
+                        "online": True,
+                    }
         return records
 
     async def probe_host(self, host: str, name: str = "") -> dict[str, Any]:
@@ -320,16 +392,16 @@ class RemoteSession:
         remote = self.make_remote(address)
         await remote.async_generate_cert_if_missing()
         try:
-            cert_name, mac = await remote.async_get_name_and_mac()
+            cert_name, mac = await asyncio.wait_for(remote.async_get_name_and_mac(), timeout=NETWORK_TIMEOUT)
         except CannotConnect as error:
             raise RuntimeError(f"could not reach {name or host} at {address}") from error
         finally:
             remote.disconnect()
-        identifier = mac or address
+        identifier = (mac or address)[:MAX_STRING_LEN]
         stored = self.state.get("devices", {}).get(identifier, {})
         return {
             "identifier": identifier,
-            "name": name or cert_name or "Android TV",
+            "name": (name or cert_name or "Android TV")[:MAX_STRING_LEN],
             "host": address,
             "address": address,
             "paired": bool(isinstance(stored, dict) and stored.get("paired")),
@@ -340,7 +412,8 @@ class RemoteSession:
         visible: dict[str, dict[str, Any]] = {}
         records = await self.avahi_records()
         for identifier, device in records.items():
-            self.discovered[identifier] = device
+            if len(self.discovered) < MAX_DEVICES:
+                self.discovered[identifier] = device
             visible[identifier] = device
             if device.get("paired"):
                 self.remember_device(device)
@@ -348,20 +421,21 @@ class RemoteSession:
         for identifier, stored in self.state.get("devices", {}).items():
             if identifier not in visible and isinstance(stored, dict):
                 visible[identifier] = {
-                    **stored,
                     "identifier": identifier,
+                    "name": str(stored.get("name") or "Android TV")[:MAX_STRING_LEN],
+                    "host": str(stored.get("host") or stored.get("address") or "")[:MAX_STRING_LEN],
+                    "address": str(stored.get("address") or stored.get("host") or "")[:MAX_STRING_LEN],
                     "paired": bool(stored.get("paired")),
                     "online": False,
                 }
+            if len(visible) >= MAX_DEVICES:
+                break
 
-        self.save_state()
-        return sorted(
-            visible.values(),
-            key=lambda device: (
-                not bool(device.get("paired")),
-                not bool(device.get("online")),
-                str(device.get("name", "")).lower(),
-            ),
+        return list(
+            sorted(
+                visible.values(),
+                key=lambda item: (not item.get("paired"), not item.get("online"), str(item.get("name") or "")),
+            )
         )
 
     def active_device(self) -> dict[str, str]:
@@ -377,6 +451,7 @@ class RemoteSession:
         return "awake" if self.remote.is_on else "asleep"
 
     async def switch_device(self, identifier: str) -> None:
+        identifier = identifier[:MAX_STRING_LEN]
         if identifier == self.identifier and self.connected:
             emit("switched", **self.active_device())
             return
@@ -395,6 +470,7 @@ class RemoteSession:
 
     async def start_pairing(self, identifier: str) -> None:
         await self.close_pairing()
+        identifier = identifier[:MAX_STRING_LEN]
         device = self.discovered.get(identifier) or self.state.get("devices", {}).get(identifier)
         if not isinstance(device, dict):
             raise RuntimeError("that device is no longer available")
@@ -404,7 +480,7 @@ class RemoteSession:
         remote = self.make_remote(address)
         await remote.async_generate_cert_if_missing()
         try:
-            await remote.async_start_pairing()
+            await asyncio.wait_for(remote.async_start_pairing(), timeout=NETWORK_TIMEOUT)
         except CannotConnect as error:
             remote.disconnect()
             raise RuntimeError(f"could not start pairing with {device.get('name') or host}") from error
@@ -414,7 +490,7 @@ class RemoteSession:
         emit(
             "pairing-pin",
             identifier=identifier,
-            name=str(device.get("name") or "Android TV"),
+            name=str(device.get("name") or "Android TV")[:MAX_STRING_LEN],
         )
 
     async def finish_pairing(self, pin: str) -> None:
@@ -427,7 +503,7 @@ class RemoteSession:
         identifier = self.pairing_identifier
         host = self.pairing.host
         try:
-            await self.pairing.async_finish_pairing(code)
+            await asyncio.wait_for(self.pairing.async_finish_pairing(code), timeout=NETWORK_TIMEOUT)
         except InvalidAuth as error:
             raise RuntimeError("the TV did not accept that code") from error
         finally:
@@ -439,16 +515,18 @@ class RemoteSession:
 
     async def add_host(self, host: str, name: str = "") -> None:
         device = await self.probe_host(host, name)
-        self.discovered[str(device["identifier"])] = device
+        identifier = str(device["identifier"])
+        if len(self.discovered) < MAX_DEVICES:
+            self.discovered[identifier] = device
         self.remember_device(device)
         if device["paired"]:
             await self.connect(device["host"], device["name"])
             emit("switched", **self.active_device())
             return
-        await self.start_pairing(str(device["identifier"]))
+        await self.start_pairing(identifier)
 
     async def handle_request(self, request: dict[str, Any]) -> None:
-        operation = str(request.get("op", ""))
+        operation = str(request.get("op", ""))[:MAX_STRING_LEN]
         if operation == "discover":
             emit("devices", devices=await self.scan_devices())
             return
@@ -481,6 +559,18 @@ class RemoteSession:
 
         assert self.remote is not None
         try:
+            # Verified power-off: only send command if currently awake or unknown
+            if action == "power-off":
+                if self.remote.is_on is False:
+                    return "asleep"
+                # If awake or unknown, send SLEEP command to power off safely
+                self.remote.send_key_command("SLEEP")
+                await asyncio.sleep(0.05)
+                return "asleep"
+            if action == "wake":
+                self.remote.send_key_command("WAKEUP")
+                await asyncio.sleep(0.05)
+                return "awake"
             if action in REMOTE_KEYS:
                 self.remote.send_key_command(REMOTE_KEYS[action])
                 await asyncio.sleep(0.05)
@@ -491,7 +581,7 @@ class RemoteSession:
                 return ""
             if action == "status":
                 return self.power_status()
-            raise ValueError(f"unknown action: {action}")
+            raise ValueError(f"unknown action: {action[:32]}")
         except ConnectionClosed:
             self.connected = False
             await self.connect(self.host, self.name)
@@ -505,7 +595,7 @@ class RemoteSession:
             emit("error", action="connect", message=str(error), connected=False)
 
         while True:
-            line = await asyncio.to_thread(sys.stdin.readline)
+            line = await asyncio.to_thread(sys.stdin.readline, MAX_STDIN_LINE)
             if not line:
                 break
 
@@ -524,31 +614,31 @@ class RemoteSession:
                 result = await self.dispatch(raw_command)
                 emit(
                     "result",
-                    action=raw_command,
+                    action=raw_command[:32],
                     result=result,
+                    status=self.power_status(),
                     elapsedMs=round((time.monotonic() - started) * 1000, 1),
+                    **self.active_device(),
                 )
             except Exception as error:
-                action = raw_command
-                if raw_command.startswith("{"):
-                    try:
-                        action = str(json.loads(raw_command).get("op", "request"))
-                    except json.JSONDecodeError:
-                        action = "request"
                 emit(
                     "error",
-                    action=action,
+                    action=raw_command[:24],
                     message=str(error),
                     connected=self.connected,
+                    status=self.power_status(),
                 )
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="", help="Android TV hostname or IP address")
+    parser.add_argument("--name", default="Android TV", help="display name for the device")
+    return parser.parse_args()
 
 
 async def async_main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="")
-    parser.add_argument("--name", default="Android TV")
-    args = parser.parse_args()
-
+    args = parse_arguments()
     session = RemoteSession(args.host, args.name)
     try:
         await session.run()
@@ -557,5 +647,12 @@ async def async_main() -> int:
     return 0
 
 
+def main() -> int:
+    try:
+        return asyncio.run(async_main())
+    except KeyboardInterrupt:
+        return 0
+
+
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(async_main()))
+    raise SystemExit(main())
