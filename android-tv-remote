@@ -25,7 +25,7 @@ Playback and audio:
   play-pause previous next rewind ff volume-down volume-up
 
 Power and status:
-  wake sleep status
+  wake sleep power power-off status
 
 Apps:
   app-plex app-netflix app-youtube
@@ -132,7 +132,7 @@ case "$1" in
 session)
   run_session
   ;;
-up | down | left | right | select | back | home | menu | play-pause | previous | next | rewind | ff | volume-down | volume-up | wake | sleep | status | app-plex | app-netflix | app-youtube)
+up | down | left | right | select | back | home | menu | play-pause | previous | next | rewind | ff | volume-down | volume-up | mute | wake | sleep | power | power-off | toggle-power | status | app-plex | app-netflix | app-youtube)
   echo "android-tv-remote: one-shot actions run through the bar session" >&2
   exit 2
   ;;

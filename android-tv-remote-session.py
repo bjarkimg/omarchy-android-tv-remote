@@ -35,8 +35,12 @@ REMOTE_KEYS = {
     "ff": "MEDIA_FAST_FORWARD",
     "volume-down": "VOLUME_DOWN",
     "volume-up": "VOLUME_UP",
+    "mute": "VOLUME_MUTE",
     "wake": "WAKEUP",
     "sleep": "SLEEP",
+    "power": "POWER",
+    "power-off": "POWER",
+    "toggle-power": "POWER",
 }
 
 APP_LINKS = {

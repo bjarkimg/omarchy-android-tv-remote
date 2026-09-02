@@ -51,6 +51,8 @@ BarWidget {
     var value = String(action || "")
     if (value.indexOf("app-") === 0) return value.slice(4).toUpperCase()
     if (value === "ff") return "FAST FORWARD"
+    if (value === "power-off") return "POWER OFF"
+    if (value === "toggle-power") return "POWER"
     return value.toUpperCase().replace(/-/g, " ")
   }
 
@@ -320,7 +322,8 @@ BarWidget {
     else if (key === "m") sendAction("menu")
     else if (key === "p") sendAction("play-pause")
     else if (key === "w") sendAction("wake")
-    else if (key === "s") sendAction("sleep")
+    else if (key === "s" || key === "o") sendAction("power-off")
+    else if (key === "x") sendAction("mute")
     else if (key === "+" || key === "=") sendAction("volume-up")
     else if (key === "-" || key === "_") sendAction("volume-down")
     else if (key === "1") sendAction("app-plex")
@@ -487,15 +490,35 @@ BarWidget {
             }
           }
 
-          Text {
-            id: connectionLabel
+          Row {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            text: (root.online ? "● " : "○ ") + root.statusText
-            color: root.online ? root.foreground : root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            font.bold: true
+            spacing: Style.space(6)
+
+            Text {
+              id: connectionLabel
+              anchors.verticalCenter: parent.verticalCenter
+              text: (root.online ? "● " : "○ ") + root.statusText
+              color: root.online ? root.foreground : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Button {
+              width: 28
+              height: 28
+              text: ""
+              iconText: "󰐥"
+              tooltipText: "Power Off TV"
+              foreground: root.foreground
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              bordered: true
+              visible: root.viewMode === "remote"
+              onClicked: root.sendAction("power-off")
+            }
           }
         }
 
@@ -591,17 +614,36 @@ BarWidget {
             }
 
             RemoteKey {
+              action: "mute"
+              iconText: "󰖁"
+              text: "MUTE"
+              keyWidth: 92
+            }
+
+            RemoteKey {
               action: "ff"
               iconText: "󰑐"
               text: "FF"
               keyWidth: 92
             }
+          }
+
+          Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(7)
 
             RemoteKey {
               action: "wake"
               iconText: "󰤄"
               text: "WAKE"
-              keyWidth: 92
+              keyWidth: 142
+            }
+
+            RemoteKey {
+              action: "power-off"
+              iconText: "󰐥"
+              text: "POWER OFF"
+              keyWidth: 142
             }
           }
 
@@ -662,6 +704,7 @@ BarWidget {
                 "[HJKL] MOVE   [ENTER] OK",
                 "[B] BACK   [G] HOME   [M] MENU",
                 "[P] PLAY   [R/F] REW/FF   [−/+] VOL",
+                "[W] WAKE   [S/O] POWER OFF   [X] MUTE",
                 "[1] PLEX   [2] NETFLIX   [3] YOUTUBE",
                 "[D] DEVICES   [ESC] CLOSE",
               ]

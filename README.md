@@ -99,10 +99,11 @@ trash button or `X`.
 | P | Play/pause |
 | R / F | Rewind / fast-forward |
 | - / + | Volume |
+| X | Mute (on Remote) / Remove device (on Devices) |
 | W | Wake |
+| S / O | Power off / Sleep |
 | 1 / 2 / 3 | Plex / Netflix / YouTube |
 | D | Devices |
-| X | Remove selected device (on Devices) |
 | Escape or Q | Close |
 
 ## Update
