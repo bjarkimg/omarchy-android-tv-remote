@@ -104,11 +104,16 @@ BarWidget {
 
   function scanDevices() {
     processError = ""
+    if (!sessionProcess.running) {
+      manualReconnect()
+    }
     if (sendRequest({ "op": "discover" })) {
       scanning = true
       statusText = "SCANNING"
+      scanTimeout.restart()
     } else {
       scanning = false
+      scanTimeout.stop()
       statusText = "OFFLINE"
       processError = "Remote session is not running"
     }
@@ -210,9 +215,9 @@ BarWidget {
     if (message.event === "ready") {
       sessionReady = true
       reconnecting = false
-      online = true
+      online = Boolean(message.connected)
       updateActiveDevice(message)
-      statusText = powerStatusLabel(message.status)
+      statusText = online ? powerStatusLabel(message.status) : "NO DEVICE"
       flushQueuedActions()
       return
     }
@@ -241,6 +246,7 @@ BarWidget {
 
     if (message.event === "devices") {
       scanning = false
+      scanTimeout.stop()
       devices = message.devices || []
       selectedDeviceIndex = Math.max(0, Math.min(selectedDeviceIndex, Math.max(0, devices.length - 1)))
       for (var index = 0; index < devices.length; index++) {
@@ -250,6 +256,7 @@ BarWidget {
         }
       }
       if (statusText !== "REMOVED") statusText = String(devices.length) + " FOUND"
+      if (devices.length > 0) processError = ""
       return
     }
 
@@ -272,7 +279,7 @@ BarWidget {
     if (message.event === "switched" || message.event === "paired") {
       updateActiveDevice(message)
       sessionReady = true
-      online = true
+      online = message.connected !== false
       viewMode = "remote"
       statusText = message.event === "paired" ? "PAIRED" : "ONLINE"
       processError = ""
@@ -283,6 +290,7 @@ BarWidget {
 
     if (message.event === "error") {
       scanning = false
+      scanTimeout.stop()
       online = Boolean(message.connected)
       processError = String(message.message || "")
       statusText = online ? String(message.action || "").toUpperCase() + " FAILED" : "OFFLINE"
@@ -353,6 +361,20 @@ BarWidget {
     sessionProcess.running = true
   }
 
+  Timer {
+    id: scanTimeout
+    interval: 15000
+    repeat: false
+    onTriggered: {
+      if (!root.scanning) return
+      root.scanning = false
+      if (root.devices.length === 0 && root.processError === "") {
+        root.processError = "Scan timed out. Add the TV by IP if it does not appear."
+        root.statusText = "SCAN TIMEOUT"
+      }
+    }
+  }
+
   Process {
     id: sessionProcess
     command: [
@@ -363,6 +385,14 @@ BarWidget {
       root.deviceName,
       "session",
     ]
+    environment: ({
+      "PATH": "/usr/bin:/bin",
+      "HOME": Quickshell.env("HOME") || "",
+      "XDG_STATE_HOME": Quickshell.env("XDG_STATE_HOME") || "",
+      "XDG_RUNTIME_DIR": Quickshell.env("XDG_RUNTIME_DIR") || "",
+      "DBUS_SESSION_BUS_ADDRESS": Quickshell.env("DBUS_SESSION_BUS_ADDRESS") || "",
+      "LC_ALL": "C.UTF-8"
+    })
     stdinEnabled: true
     running: true
 
@@ -385,6 +415,7 @@ BarWidget {
       root.sessionReady = false
       root.online = false
       root.scanning = false
+      scanTimeout.stop()
       root.statusText = "OFFLINE"
       if (root.restartAttempts < root.maxRestartAttempts) {
         root.restartAttempts++
@@ -487,6 +518,7 @@ BarWidget {
 
             Text {
               text: "󰍹"
+              textFormat: Text.PlainText
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.title
@@ -497,6 +529,7 @@ BarWidget {
 
               Text {
                 text: root.activeDeviceName.toUpperCase()
+                textFormat: Text.PlainText
                 color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.subtitle
@@ -507,6 +540,7 @@ BarWidget {
                 text: root.viewMode === "remote" ? "ANDROID TV REMOTE"
                   : root.viewMode === "devices" ? "ANDROID TV DEVICES"
                   : "PAIR ANDROID TV"
+                textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -523,6 +557,7 @@ BarWidget {
               id: connectionLabel
               anchors.verticalCenter: parent.verticalCenter
               text: (root.online ? "● " : "○ ") + root.statusText
+              textFormat: Text.PlainText
               color: root.online ? root.foreground : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -712,6 +747,7 @@ BarWidget {
             visible: root.processError !== ""
             width: parent.width
             text: root.processError
+            textFormat: Text.PlainText
             color: root.accent
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
@@ -736,6 +772,7 @@ BarWidget {
               Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: modelData
+                textFormat: Text.PlainText
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
@@ -825,6 +862,7 @@ BarWidget {
             visible: root.processError !== ""
             width: parent.width
             text: root.processError
+            textFormat: Text.PlainText
             color: root.accent
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
@@ -836,6 +874,7 @@ BarWidget {
             visible: !root.scanning && root.devices.length === 0 && root.processError === ""
             width: parent.width
             text: "NO DEVICES FOUND"
+            textFormat: Text.PlainText
             color: root.dim
             horizontalAlignment: Text.AlignHCenter
             font.family: root.fontFamily
@@ -902,6 +941,7 @@ BarWidget {
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "[J/K] SELECT   [ENTER] OPEN   [X] REMOVE   [R] RESCAN"
+            textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -917,6 +957,7 @@ BarWidget {
           Text {
             width: parent.width
             text: "Enter the 6-character code shown on\n" + root.pairingName
+            textFormat: Text.PlainText
             color: root.foreground
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
@@ -946,6 +987,7 @@ BarWidget {
             visible: root.processError !== ""
             width: parent.width
             text: root.processError
+            textFormat: Text.PlainText
             color: root.accent
             wrapMode: Text.Wrap
             horizontalAlignment: Text.AlignHCenter
@@ -988,6 +1030,7 @@ BarWidget {
           Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "[ENTER] PAIR   [ESC] CANCEL"
+            textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

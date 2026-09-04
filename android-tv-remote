@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+export PATH="/usr/bin:/bin"
+
+PYTHON_BIN="/usr/bin/python3"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  PYTHON_BIN="/bin/python3"
+fi
+
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CLIENT_HOME="$DATA_HOME/io.github.bjarkimg.android-tv-remote"
 LEGACY_HOME="$DATA_HOME/io.github.bjarkimg.shield-remote"
@@ -36,7 +43,7 @@ EOF
 }
 
 setup_client() {
-  if ! command -v python3 >/dev/null 2>&1; then
+  if [[ ! -x "$PYTHON_BIN" ]]; then
     echo "android-tv-remote: python3 is required" >&2
     return 1
   fi
@@ -50,7 +57,7 @@ setup_client() {
 
   if [[ ! -x "$CLIENT_PYTHON" ]]; then
     echo "android-tv-remote: creating Python environment in $VENV..." >&2
-    python3 -m venv "$VENV"
+    "$PYTHON_BIN" -m venv "$VENV"
   fi
 
   if [[ ! -f "$REQUIREMENTS_LOCK" ]]; then

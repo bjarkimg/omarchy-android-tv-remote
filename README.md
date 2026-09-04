@@ -54,6 +54,7 @@ the panel is off.
 - Play/pause, rewind, fast-forward, and volume
 - Wake, sleep, and power status
 - Local-network discovery, PIN pairing, device switching, and forget
+- Devices are remembered by MAC address, so DHCP IP changes after a restart still reconnect
 - Shortcuts for Plex, Netflix, and YouTube
 - Mouse and keyboard operation from a theme-aware bar panel
 
