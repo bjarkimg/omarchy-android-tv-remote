@@ -25,6 +25,24 @@ BarWidget {
   property var devices: []
   property var actionQueue: []
   property int selectedDeviceIndex: 0
+  property string nowPlaying: ""
+  property string currentApp: ""
+  property string powerState: "unknown"
+  property int volumeLevel: -1
+  property int volumeMax: 0
+  property bool tvMuted: false
+
+  readonly property string playingLine: {
+    if (!root.online) return "OFFLINE"
+    if (root.powerState === "asleep") return "ASLEEP"
+    if (root.nowPlaying !== "") return "PLAYING  ·  " + root.nowPlaying.toUpperCase()
+    return "PLAYING  ·  —"
+  }
+  readonly property string volumeLine: {
+    if (root.tvMuted) return "MUTED"
+    if (root.volumeMax > 0 && root.volumeLevel >= 0) return "VOL " + String(root.volumeLevel)
+    return ""
+  }
 
   readonly property string deviceName: String(setting("deviceName", "Android TV"))
   readonly property string host: String(setting("host", ""))
@@ -93,6 +111,32 @@ BarWidget {
     activeDeviceName = String(message.name || activeDeviceName)
     activeIdentifier = String(message.identifier || activeIdentifier)
     activeHost = String(message.host || activeHost)
+  }
+
+  function applyPlayback(message) {
+    if (message.appLabel !== undefined) nowPlaying = String(message.appLabel || "")
+    if (message.app !== undefined) currentApp = String(message.app || "")
+    if (message.status) powerState = String(message.status)
+    if (message.volume !== undefined && message.volume !== null && message.volume !== "") {
+      volumeLevel = Number(message.volume)
+    }
+    if (message.volumeMax !== undefined && message.volumeMax !== null && message.volumeMax !== "") {
+      volumeMax = Number(message.volumeMax)
+    }
+    if (message.muted !== undefined) tvMuted = Boolean(message.muted)
+  }
+
+  function sendSearch() {
+    var value = String(searchInput.text || "").trim()
+    if (!value) {
+      processError = "Enter text to send to the TV"
+      return
+    }
+    processError = ""
+    statusText = "SENDING"
+    sendRequest({ "op": "text", "value": value })
+    searchInput.text = ""
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function openDevices() {
@@ -217,6 +261,7 @@ BarWidget {
       reconnecting = false
       online = Boolean(message.connected)
       updateActiveDevice(message)
+      applyPlayback(message)
       statusText = online ? powerStatusLabel(message.status) : "NO DEVICE"
       flushQueuedActions()
       return
@@ -239,6 +284,12 @@ BarWidget {
         activeDeviceName = deviceName
         activeIdentifier = ""
         activeHost = host
+        nowPlaying = ""
+        currentApp = ""
+        powerState = "unknown"
+        volumeLevel = -1
+        volumeMax = 0
+        tvMuted = false
         statusText = "REMOVED"
       }
       return
@@ -278,6 +329,7 @@ BarWidget {
 
     if (message.event === "switched" || message.event === "paired") {
       updateActiveDevice(message)
+      applyPlayback(message)
       sessionReady = true
       online = message.connected !== false
       viewMode = "remote"
@@ -285,6 +337,12 @@ BarWidget {
       processError = ""
       flushQueuedActions()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      return
+    }
+
+    if (message.event === "now-playing") {
+      applyPlayback(message)
+      if (message.connected !== undefined) online = Boolean(message.connected)
       return
     }
 
@@ -305,8 +363,11 @@ BarWidget {
     if (message.event !== "result") return
 
     online = true
+    applyPlayback(message)
     if (message.action === "status") {
-      statusText = powerStatusLabel(message.result)
+      statusText = powerStatusLabel(message.result || message.status)
+    } else if (message.action === "text") {
+      statusText = "SENT"
     } else {
       statusText = actionLabel(String(message.action || ""))
     }
@@ -334,11 +395,17 @@ BarWidget {
     else if (key === "x") sendAction("mute")
     else if (key === "+" || key === "=") sendAction("volume-up")
     else if (key === "-" || key === "_") sendAction("volume-down")
+    else if (key === "[") sendAction("previous")
+    else if (key === "]") sendAction("next")
     else if (key === "1") sendAction("app-plex")
     else if (key === "2") sendAction("app-netflix")
     else if (key === "3") sendAction("app-youtube")
+    else if (key === "4") sendAction("app-disney")
+    else if (key === "5") sendAction("app-prime")
+    else if (key === "6") sendAction("app-settings")
     else if (key === "r") sendAction("rewind")
     else if (key === "f") sendAction("ff")
+    else if (key === "/" || key === "t") searchInput.forceActiveFocus()
     else if (key === "q") close()
   }
 
@@ -459,7 +526,7 @@ BarWidget {
     bar: root.bar
     text: "󰟴"
     active: root.popupOpen
-    tooltipText: root.activeDeviceName + " Android TV"
+    tooltipText: root.activeDeviceName + (root.nowPlaying ? " · " + root.nowPlaying : " Android TV")
     onPressed: root.popupOpen = !root.popupOpen
   }
 
@@ -476,7 +543,7 @@ BarWidget {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: pinInput.activeFocus || hostInput.activeFocus || nameInput.activeFocus
+      blocked: pinInput.activeFocus || hostInput.activeFocus || nameInput.activeFocus || searchInput.activeFocus
 
       onMoveRequested: function(dx, dy) {
         if (root.viewMode === "devices") {
@@ -592,6 +659,37 @@ BarWidget {
           width: parent.width
           spacing: Style.space(12)
 
+          Item {
+            width: parent.width
+            height: playingLabel.implicitHeight
+
+            Text {
+              id: playingLabel
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              width: parent.width - volumeCaption.implicitWidth - Style.space(8)
+              text: root.playingLine
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              color: root.online ? root.foreground : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Text {
+              id: volumeCaption
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.volumeLine
+              textFormat: Text.PlainText
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+          }
+
           Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Style.space(7)
@@ -666,24 +764,38 @@ BarWidget {
             spacing: Style.space(7)
 
             RemoteKey {
+              action: "previous"
+              iconText: "󰒮"
+              text: "PREV"
+              keyWidth: 52
+            }
+
+            RemoteKey {
               action: "rewind"
               iconText: "󰑈"
               text: "REW"
-              keyWidth: 92
+              keyWidth: 52
             }
 
             RemoteKey {
               action: "mute"
               iconText: "󰖁"
               text: "MUTE"
-              keyWidth: 92
+              keyWidth: 52
             }
 
             RemoteKey {
               action: "ff"
               iconText: "󰑐"
               text: "FF"
-              keyWidth: 92
+              keyWidth: 52
+            }
+
+            RemoteKey {
+              action: "next"
+              iconText: "󰒭"
+              text: "NEXT"
+              keyWidth: 52
             }
           }
 
@@ -729,6 +841,42 @@ BarWidget {
             }
           }
 
+          Row {
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(7)
+
+            RemoteKey {
+              action: "app-disney"
+              text: "DSNY"
+              keyWidth: 92
+            }
+
+            RemoteKey {
+              action: "app-prime"
+              text: "PRIME"
+              keyWidth: 92
+            }
+
+            RemoteKey {
+              action: "app-settings"
+              text: "SET"
+              keyWidth: 92
+            }
+          }
+
+          TextField {
+            id: searchInput
+            width: parent.width
+            placeholderText: "Type to search on the TV"
+            foreground: root.foreground
+            accent: root.accent
+            onAccepted: root.sendSearch()
+            Keys.onEscapePressed: function(event) {
+              keyCatcher.forceActiveFocus()
+              event.accepted = true
+            }
+          }
+
           Button {
             anchors.horizontalCenter: parent.horizontalCenter
             width: 291
@@ -763,9 +911,9 @@ BarWidget {
               model: [
                 "[HJKL] MOVE   [ENTER] OK",
                 "[B] BACK   [G] HOME   [M] MENU",
-                "[P] PLAY   [R/F] REW/FF   [−/+] VOL",
-                "[W] WAKE   [S/O] POWER OFF   [X] MUTE",
-                "[1] PLEX   [2] NETFLIX   [3] YOUTUBE",
+                "[P] PLAY   [R/F] REW/FF   [[/]] PREV/NEXT",
+                "[−/+] VOL   [X] MUTE   [T] TYPE",
+                "[1] PLEX  [2] NFLX  [3] YT  [4] DSNY  [5] PRIME  [6] SET",
                 "[D] DEVICES   [ESC] CLOSE",
               ]
 

@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.bjarkimg.android-tv-remote",
   "name": "Android TV Remote",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "author": "Bjarki Már",
   "license": "MIT",
-  "description": "Keyboard-driven Android TV / Google TV remote with discovery, PIN pairing, and Plex/Netflix/YouTube shortcuts. Works with NVIDIA SHIELD, Chromecast with Google TV, Google TV Streamer, and Android TV sets.",
+  "description": "Keyboard-driven Android TV / Google TV remote with discovery, PIN pairing, now-playing, and Plex/Netflix/YouTube/Disney+/Prime shortcuts. Works with NVIDIA SHIELD, Chromecast with Google TV, Google TV Streamer, and Android TV sets.",
   "homepage": "https://github.com/bjarkimg/omarchy-android-tv-remote",
   "repository": "https://github.com/bjarkimg/omarchy-android-tv-remote",
   "keywords": [

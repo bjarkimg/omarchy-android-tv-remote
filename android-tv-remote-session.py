@@ -26,6 +26,8 @@ MAX_STATE_SIZE = 65536
 MAX_STDIN_LINE = 65536
 MAX_DEVICES = 32
 MAX_STRING_LEN = 64
+MAX_TEXT_LEN = 128
+MAX_APP_LEN = 96
 NETWORK_TIMEOUT = 8.0
 AVAHI_TIMEOUT = 10.0
 MDNS_CACHE_TTL = 3.0
@@ -61,6 +63,35 @@ APP_LINKS = {
     "app-plex": "com.plexapp.android",
     "app-netflix": "com.netflix.ninja",
     "app-youtube": "com.google.android.youtube.tv",
+    "app-disney": "com.disney.disneyplus",
+    "app-prime": "com.amazon.amazonvideo.livingroom",
+    "app-settings": "com.android.tv.settings",
+}
+
+APP_LABELS = {
+    "com.plexapp.android": "Plex",
+    "com.netflix.ninja": "Netflix",
+    "com.google.android.youtube.tv": "YouTube",
+    "com.google.android.youtube.tvmusic": "YT Music",
+    "com.google.android.apps.youtube.unplugged": "YouTube TV",
+    "com.google.android.videos": "Google TV",
+    "com.disney.disneyplus": "Disney+",
+    "com.amazon.amazonvideo.livingroom": "Prime Video",
+    "com.amazon.avod.thirdparty.firetv": "Prime Video",
+    "org.xbmc.kodi": "Kodi",
+    "com.spotify.tv.android": "Spotify",
+    "tv.twitch.android.app": "Twitch",
+    "com.wbd.stream": "Max",
+    "com.hbo.hbonow": "Max",
+    "com.apple.atve.androidtv.appletv": "Apple TV",
+    "com.android.vending": "Play Store",
+    "com.android.tv.settings": "Settings",
+    "com.google.android.apps.tv.launcherx": "Home",
+    "com.google.android.tvlauncher": "Home",
+    "com.google.android.leanbacklauncher": "Home",
+    "com.google.android.apps.tv.launcher": "Home",
+    "com.nvidia.shield.home": "SHIELD Home",
+    "com.google.android.apps.mediashell": "Chromecast",
 }
 
 MDNS_TYPES = ("_androidtvremote2._tcp", "_androidtvremote._tcp")
@@ -70,6 +101,18 @@ CLIENT_NAME = "Omarchy"
 def sanitize_text(value: Any, max_len: int = MAX_STRING_LEN) -> str:
     cleaned = CONTROL_CHARS_RE.sub("", str(value or "")).strip()
     return cleaned[:max_len]
+
+
+def app_label(package: str) -> str:
+    package = sanitize_text(package, MAX_APP_LEN)
+    if not package:
+        return ""
+    mapped = APP_LABELS.get(package.lower())
+    if mapped:
+        return mapped
+    tail = package.rsplit(".", 1)[-1]
+    tail = re.sub(r"[^A-Za-z0-9]+", " ", tail).strip()
+    return sanitize_text(tail.upper() or package, 24)
 
 
 def sanitize_device(device: dict[str, Any]) -> dict[str, Any]:
@@ -268,6 +311,10 @@ class RemoteSession:
         self.discovered: dict[str, dict[str, Any]] = {}
         self._mdns_cache: dict[str, dict[str, Any]] = {}
         self._mdns_at = 0.0
+        self.current_app = ""
+        self.volume_level = -1
+        self.volume_max = 0
+        self.muted = False
 
         data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
         self.cert_dir = Path(data_home) / "io.github.bjarkimg.android-tv-remote"
@@ -305,7 +352,76 @@ class RemoteSession:
             keyfile=self.keyfile,
             host=host,
             loop=self.loop,
+            enable_ime=True,
         )
+
+    def playback_fields(self) -> dict[str, Any]:
+        app = sanitize_text(self.current_app, MAX_APP_LEN)
+        return {
+            "app": app,
+            "appLabel": app_label(app),
+            "volume": int(self.volume_level),
+            "volumeMax": int(self.volume_max),
+            "muted": bool(self.muted),
+        }
+
+    def _sync_playback(self, remote: AndroidTVRemote) -> None:
+        self.current_app = sanitize_text(getattr(remote, "current_app", "") or "", MAX_APP_LEN)
+        info = remote.volume_info if isinstance(remote.volume_info, dict) else {}
+        try:
+            self.volume_level = int(info.get("level", -1))
+            self.volume_max = int(info.get("max", 0))
+            self.muted = bool(info.get("muted", False))
+        except (TypeError, ValueError):
+            self.volume_level = -1
+            self.volume_max = 0
+            self.muted = False
+
+    def _bind_remote(self, remote: AndroidTVRemote) -> None:
+        remote.add_current_app_updated_callback(self._on_current_app)
+        remote.add_volume_info_updated_callback(self._on_volume_info)
+        remote.add_is_on_updated_callback(self._on_is_on)
+
+    def _on_current_app(self, current_app: str) -> None:
+        self.current_app = sanitize_text(current_app, MAX_APP_LEN)
+        emit(
+            "now-playing",
+            connected=self.connected,
+            status=self.power_status(),
+            **self.active_device(),
+            **self.playback_fields(),
+        )
+
+    def _on_volume_info(self, volume_info: Any) -> None:
+        info = volume_info if isinstance(volume_info, dict) else {}
+        try:
+            self.volume_level = int(info.get("level", self.volume_level))
+            self.volume_max = int(info.get("max", self.volume_max))
+            self.muted = bool(info.get("muted", self.muted))
+        except (TypeError, ValueError):
+            return
+        emit(
+            "now-playing",
+            connected=self.connected,
+            status=self.power_status(),
+            **self.active_device(),
+            **self.playback_fields(),
+        )
+
+    def _on_is_on(self, is_on: bool) -> None:
+        emit(
+            "now-playing",
+            connected=self.connected,
+            status="awake" if is_on else "asleep",
+            **self.active_device(),
+            **self.playback_fields(),
+        )
+
+    def clear_playback(self) -> None:
+        self.current_app = ""
+        self.volume_level = -1
+        self.volume_max = 0
+        self.muted = False
 
     async def ensure_cert(self) -> None:
         self.cert_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -323,11 +439,23 @@ class RemoteSession:
             pass
 
         if not self.host and not self.identifier:
-            emit("ready", status="unknown", connected=False, **self.active_device())
+            emit(
+                "ready",
+                status="unknown",
+                connected=False,
+                **self.active_device(),
+                **self.playback_fields(),
+            )
             return
 
         await self.connect(self.host, self.name, identifier=self.identifier)
-        emit("ready", status=self.power_status(), connected=True, **self.active_device())
+        emit(
+            "ready",
+            status=self.power_status(),
+            connected=True,
+            **self.active_device(),
+            **self.playback_fields(),
+        )
 
     async def resolve_host(self, host: str) -> str:
         host = sanitize_text(host)
@@ -450,6 +578,8 @@ class RemoteSession:
         self.host = address
         self.name = display_name
         self.identifier = identity
+        self._bind_remote(remote)
+        self._sync_playback(remote)
         device = {
             "identifier": identity,
             "mac": identity if normalize_mac(identity) else "",
@@ -468,6 +598,7 @@ class RemoteSession:
             self.remote.disconnect()
         self.remote = None
         self.connected = False
+        self.clear_playback()
 
     async def close_pairing(self) -> None:
         if self.pairing is not None:
@@ -833,7 +964,7 @@ class RemoteSession:
         identifier = sanitize_text(identifier)
         mac = normalize_mac(identifier) or identifier
         if mac == self.identifier and self.connected:
-            emit("switched", connected=True, **self.active_device())
+            emit("switched", connected=True, **self.active_device(), **self.playback_fields())
             return
 
         device = self.device_from_id(mac)
@@ -847,7 +978,7 @@ class RemoteSession:
             str(device.get("name") or ""),
             identifier=mac,
         )
-        emit("switched", connected=True, **self.active_device())
+        emit("switched", connected=True, **self.active_device(), **self.playback_fields())
 
     async def start_pairing(self, identifier: str) -> None:
         await self.close_pairing()
@@ -895,7 +1026,7 @@ class RemoteSession:
 
         device = self.device_from_id(identifier) or {}
         await self.connect(str(host), str(device.get("name") or ""), identifier=identifier)
-        emit("paired", connected=True, **self.active_device())
+        emit("paired", connected=True, **self.active_device(), **self.playback_fields())
 
     async def add_host(self, host: str, name: str = "") -> None:
         device = await self.probe_host(host, name)
@@ -905,7 +1036,7 @@ class RemoteSession:
         self.remember_device(device, select=False)
         if device["paired"]:
             await self.connect(device["host"], device["name"], identifier=identifier)
-            emit("switched", connected=True, **self.active_device())
+            emit("switched", connected=True, **self.active_device(), **self.playback_fields())
             return
         await self.start_pairing(identifier)
 
@@ -933,7 +1064,30 @@ class RemoteSession:
         if operation == "remove":
             await self.remove_device(str(request.get("identifier", "")))
             return
+        if operation == "text":
+            await self.send_typed_text(str(request.get("value", "")))
+            return
         raise ValueError(f"unknown operation: {operation}")
+
+    async def send_typed_text(self, text: str) -> None:
+        cleaned = sanitize_text(text, MAX_TEXT_LEN)
+        if not cleaned:
+            raise RuntimeError("enter text to send")
+        if not self.connected or self.remote is None:
+            if not self.host and not self.identifier:
+                raise RuntimeError("no device selected — open Devices to scan or add a host")
+            await self.connect(self.host, self.name, identifier=self.identifier)
+        assert self.remote is not None
+        self.remote.send_text(cleaned)
+        emit(
+            "result",
+            action="text",
+            result=cleaned[:32],
+            status=self.power_status(),
+            connected=self.connected,
+            **self.active_device(),
+            **self.playback_fields(),
+        )
 
     async def dispatch(self, action: str, *, retry: bool = True) -> str:
         if not self.connected or self.remote is None:
@@ -1003,6 +1157,7 @@ class RemoteSession:
                     elapsedMs=round((time.monotonic() - started) * 1000, 1),
                     connected=self.connected,
                     **self.active_device(),
+                    **self.playback_fields(),
                 )
             except Exception as error:
                 emit(

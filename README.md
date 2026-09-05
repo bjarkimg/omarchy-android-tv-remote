@@ -51,11 +51,13 @@ the panel is off.
 ## Features
 
 - Directional navigation, Select, Back, Home, and Menu
-- Play/pause, rewind, fast-forward, and volume
+- Play/pause, previous/next, rewind, fast-forward, and volume
+- Current app and volume on the panel (the Google TV protocol reports the foreground app, not movie or track titles)
+- Type-to-search on the TV
 - Wake, sleep, and power status
 - Local-network discovery, PIN pairing, device switching, and forget
 - Devices are remembered by MAC address, so DHCP IP changes after a restart still reconnect
-- Shortcuts for Plex, Netflix, and YouTube
+- Shortcuts for Plex, Netflix, YouTube, Disney+, Prime Video, and Settings
 - Mouse and keyboard operation from a theme-aware bar panel
 
 ## Requirements
@@ -102,11 +104,13 @@ trash button or `X`.
 | M | Menu |
 | P | Play/pause |
 | R / F | Rewind / fast-forward |
+| [ / ] | Previous / next |
 | - / + | Volume |
+| T or / | Type to search on the TV |
 | X | Mute (on Remote) / Remove device (on Devices) |
 | W | Wake |
 | S / O | Power off / Sleep |
-| 1 / 2 / 3 | Plex / Netflix / YouTube |
+| 1 / 2 / 3 / 4 / 5 / 6 | Plex / Netflix / YouTube / Disney+ / Prime / Settings |
 | D | Devices |
 | Escape or Q | Close |
 

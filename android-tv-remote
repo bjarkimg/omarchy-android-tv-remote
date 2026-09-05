@@ -33,7 +33,7 @@ Navigation & Controls:
   up down left right select back home menu
   play-pause previous next rewind ff volume-down volume-up mute
   wake sleep power power-off toggle-power status
-  app-plex app-netflix app-youtube
+  app-plex app-netflix app-youtube app-disney app-prime app-settings
 
 Uses the Android TV Remote protocol (same as the Google TV phone app).
 Works with NVIDIA SHIELD, Chromecast with Google TV, Google TV Streamer,
