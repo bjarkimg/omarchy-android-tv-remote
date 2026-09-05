@@ -31,6 +31,7 @@ BarWidget {
   property int volumeLevel: -1
   property int volumeMax: 0
   property bool tvMuted: false
+  property string hoverHint: ""
 
   readonly property string playingLine: {
     if (!root.online) return "OFFLINE"
@@ -59,6 +60,13 @@ BarWidget {
     popupOpen = false
     viewMode = "remote"
     actionQueue = []
+    hoverHint = ""
+  }
+
+  function setHoverHint(text, hovering) {
+    var value = String(text || "")
+    if (hovering) hoverHint = value
+    else if (hoverHint === value) hoverHint = ""
   }
 
   function open() {
@@ -440,7 +448,10 @@ BarWidget {
   }
 
   onPopupOpenChanged: {
-    if (!popupOpen) return
+    if (!popupOpen) {
+      hoverHint = ""
+      return
+    }
     sendAction("status")
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -548,6 +559,7 @@ BarWidget {
     fontSize: Style.font.bodySmall
     iconSize: Style.font.iconLarge
     bordered: true
+    onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
     onClicked: root.sendAction(action)
   }
 
@@ -674,6 +686,7 @@ BarWidget {
               fontSize: Style.font.bodySmall
               bordered: true
               visible: root.viewMode === "remote"
+              onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
               onClicked: root.sendAction("power-off")
             }
           }
@@ -682,6 +695,18 @@ BarWidget {
         PanelSeparator {
           width: parent.width
           foreground: root.foreground
+        }
+
+        Text {
+          width: parent.width
+          text: root.hoverHint !== "" ? root.hoverHint : "Hover a key for its name"
+          textFormat: Text.PlainText
+          color: root.hoverHint !== "" ? root.foreground : root.dim
+          wrapMode: Text.Wrap
+          horizontalAlignment: Text.AlignHCenter
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: root.hoverHint !== ""
         }
 
         Column {
@@ -915,6 +940,7 @@ BarWidget {
             text: "DEVICES"
             iconText: "󰒋"
             tooltipText: "Scan and switch TVs  [D]"
+            onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
             foreground: root.foreground
             accent: root.accent
             fontFamily: root.fontFamily
@@ -977,6 +1003,7 @@ BarWidget {
               text: "BACK"
               iconText: "󰁍"
               tooltipText: "Back to remote  [B]"
+              onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -992,6 +1019,7 @@ BarWidget {
               iconText: "󰑓"
               iconSpinning: root.scanning
               tooltipText: "Rescan the network  [R]"
+              onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -1033,6 +1061,7 @@ BarWidget {
             text: "CONNECT HOST"
             iconText: "󰌘"
             tooltipText: "Add a TV by IP or hostname"
+            onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
             foreground: root.foreground
             accent: root.accent
             fontFamily: root.fontFamily
@@ -1094,6 +1123,7 @@ BarWidget {
                 bordered: true
                 onHovered: function(isHovered) {
                   if (isHovered) root.selectedDeviceIndex = index
+                  root.setHoverHint(tooltipText, isHovered)
                 }
                 onClicked: {
                   root.selectedDeviceIndex = index
@@ -1114,6 +1144,7 @@ BarWidget {
                 bordered: true
                 onHovered: function(isHovered) {
                   if (isHovered) root.selectedDeviceIndex = index
+                  root.setHoverHint(tooltipText, isHovered)
                 }
                 onClicked: {
                   root.selectedDeviceIndex = index
@@ -1189,6 +1220,7 @@ BarWidget {
               height: 38
               text: "CANCEL"
               tooltipText: "Cancel pairing  [Esc]"
+              onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -1203,6 +1235,7 @@ BarWidget {
               text: "PAIR"
               iconText: "󰌆"
               tooltipText: "Send the PIN shown on the TV  [Enter]"
+              onHovered: function(isHovered) { root.setHoverHint(tooltipText, isHovered) }
               enabled: pinInput.text.length === 6
               opacity: enabled ? 1 : 0.5
               foreground: root.foreground
