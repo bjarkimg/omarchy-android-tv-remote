@@ -74,6 +74,36 @@ BarWidget {
     return value.toUpperCase().replace(/-/g, " ")
   }
 
+  function actionTooltip(action) {
+    switch (String(action || "")) {
+      case "back": return "Back  [B]"
+      case "home": return "Home screen  [G]"
+      case "menu": return "Menu / options  [M]"
+      case "up": return "Up  [K]"
+      case "down": return "Down  [J]"
+      case "left": return "Left  [H]"
+      case "right": return "Right  [L]"
+      case "select": return "Select / OK  [Enter]"
+      case "volume-down": return "Volume down  [-]"
+      case "volume-up": return "Volume up  [+]"
+      case "play-pause": return "Play / pause  [P]"
+      case "previous": return "Previous track or chapter  ["
+      case "next": return "Next track or chapter  ]"
+      case "rewind": return "Rewind  [R]"
+      case "ff": return "Fast forward  [F]"
+      case "mute": return "Mute  [X]"
+      case "wake": return "Wake the TV  [W]"
+      case "power-off": return "Sleep / power off  [S]"
+      case "app-plex": return "Open Plex  [1]"
+      case "app-netflix": return "Open Netflix  [2]"
+      case "app-youtube": return "Open YouTube  [3]"
+      case "app-disney": return "Open Disney+  [4]"
+      case "app-prime": return "Open Prime Video  [5]"
+      case "app-settings": return "Open TV settings  [6]"
+      default: return actionLabel(action)
+    }
+  }
+
   function powerStatusLabel(status) {
     var value = String(status || "")
     if (value === "awake") return "ONLINE · AWAKE"
@@ -511,6 +541,7 @@ BarWidget {
 
     width: keyWidth
     height: keyHeight
+    tooltipText: root.actionTooltip(action)
     foreground: root.foreground
     accent: root.accent
     fontFamily: root.fontFamily
@@ -636,7 +667,7 @@ BarWidget {
               height: 28
               text: ""
               iconText: "󰐥"
-              tooltipText: "Power Off TV"
+              tooltipText: "Sleep / power off  [S]"
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -883,6 +914,7 @@ BarWidget {
             height: 38
             text: "DEVICES"
             iconText: "󰒋"
+            tooltipText: "Scan and switch TVs  [D]"
             foreground: root.foreground
             accent: root.accent
             fontFamily: root.fontFamily
@@ -944,6 +976,7 @@ BarWidget {
               height: 38
               text: "BACK"
               iconText: "󰁍"
+              tooltipText: "Back to remote  [B]"
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -958,6 +991,7 @@ BarWidget {
               text: root.scanning ? "SCANNING" : "SCAN"
               iconText: "󰑓"
               iconSpinning: root.scanning
+              tooltipText: "Rescan the network  [R]"
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -998,6 +1032,7 @@ BarWidget {
             height: 38
             text: "CONNECT HOST"
             iconText: "󰌘"
+            tooltipText: "Add a TV by IP or hostname"
             foreground: root.foreground
             accent: root.accent
             fontFamily: root.fontFamily
@@ -1046,7 +1081,9 @@ BarWidget {
                   + (modelData.paired ? "  ·  PAIRED" : "  ·  PAIR")
                   + (modelData.online ? "" : "  ·  OFFLINE")
                 iconText: modelData.paired ? "󰌆" : "󰐕"
-                tooltipText: String(modelData.address || modelData.host || "")
+                tooltipText: (modelData.paired ? "Switch to " : "Pair with ")
+                  + String(modelData.name || "device")
+                  + (modelData.address ? "  ·  " + String(modelData.address) : "")
                 selected: String(modelData.identifier) === root.activeIdentifier
                 hasCursor: index === root.selectedDeviceIndex
                 leftAlign: true
@@ -1151,6 +1188,7 @@ BarWidget {
               width: 142
               height: 38
               text: "CANCEL"
+              tooltipText: "Cancel pairing  [Esc]"
               foreground: root.foreground
               accent: root.accent
               fontFamily: root.fontFamily
@@ -1164,6 +1202,7 @@ BarWidget {
               height: 38
               text: "PAIR"
               iconText: "󰌆"
+              tooltipText: "Send the PIN shown on the TV  [Enter]"
               enabled: pinInput.text.length === 6
               opacity: enabled ? 1 : 0.5
               foreground: root.foreground
